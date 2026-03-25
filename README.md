@@ -1,6 +1,7 @@
 # Desafio Data Engineer Winnin
 
-## Instruções
+## Parte 1
+### Instruções
 Usar o Databricks Community para realizar a tarefa. Caso não tenha cadastro fazer o  cadastro em https://www.databricks.com/try-databricks#account e na tela de escolher o plano escolha "Get started with Community Edition"
 
 Ao fazer Login crie um cluster no menu "Compute"
@@ -13,7 +14,7 @@ Temos 2 arquivos para serem carregados:
 - 2-posts_creator_json.json.gz com dados de posts de criadores de conteúdo (creator_id,views,likes,title,published_at,tags,yt_user)
 
 
-## Exercícios
+### Exercícios
 
 1. Criar o notebook "1 - create_table_creators_scrape_wiki" que le o arquivo 1-wiki_pages.json.gz e cria a tabela delta default.creators_scrape_wiki
 
@@ -41,7 +42,29 @@ Temos 2 arquivos para serem carregados:
                     - lucasneto, 5, 10, 15
             - Exercício Extra 3: Mostrar as 3 tags mais utilizadas por criador de conteúdo
 
-## Envio
+### Envio
 Exportar todo seu workspace e nos enviar como um projeto github.
 
 Para exportar va no menu workspace->users->seu usuário->clicar na setinha pra baixo->export->source file
+
+## Parte 2: Desenho e Documentação de um Pipeline de Dados para Creators e Posts
+
+Nesta parte, você projetará e documentará uma arquitetura de dados escalável e robusta para a ingestão e atualização contínua de dados de criadores e suas postagens, considerando que você não possui os arquivos JSON do exercício anterior.
+
+Objetivo: Projetar um pipeline que consiga coletar e atualizar continuamente dados de criadores e posts, partindo do zero em relação aos dados iniciais.
+
+Requisitos da Arquitetura:
+
+Orquestrador: Qual orquestrador você utilizaria e por quê?
+
+Modelagem de Dados: Diagrama de relacionamento e documentação das tabelas (incluindo creators, posts, etc.).
+
+Extração de Dados: Como você faria a extração inicial e as atualizações desses dados (APIs, web scraping)?
+
+Etapas do Pipeline: Descreva o fluxo de dados (extração, transformação, carga, etc.).
+
+Monitoramento e Qualidade: Como você monitoraria o pipeline e avaliaria a qualidade dos dados finais?
+
+Boas Práticas: Qual fluxo e boas práticas de engenharia de software (Gitflow, princípios, etc.) seriam importantes?
+
+Entrega: A documentação e o diagrama da arquitetura devem ser incluídos no seu projeto GitHub final.-----Essa versão enfatiza a restrição de não ter os arquivos JSON, direcionando o foco para o design de um pipeline capaz de lidar com a ingestão e atualização contínua dos dados a partir das fontes originais.
