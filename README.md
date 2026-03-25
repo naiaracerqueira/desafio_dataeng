@@ -176,7 +176,7 @@ Dados com métricas de cada post, para acompanhar os números ao longo do tempo.
 | likes | long | Número de likes |
 | views | long | Número de visualizações |
 | tags | long | Tags utilizadas |
-| comments_count | long | Número de comentários |
+| comments | long | Número de comentários |
 | snapshot_date | timestamp | Data do último snapshot |
 
 #### `gold.creators_monthly`
@@ -185,7 +185,8 @@ Agregação mensal por criador, usada para análises de tendência.
 
 | Coluna | Tipo | Descrição |
 |---|---|---|
-| creator_id | string | FK para creators |
+| creator_id | string | Identificador do criador (PK) |
+| yt_user | string | Identificador do canal no YouTube (PK) |
 | year_month | string | Mês no formato yyyy-MM |
 | num_posts | integer | Número de publicações no mês |
 | total_likes | long | Soma de likes do mês |
@@ -199,7 +200,7 @@ Agregação mensal por criador, usada para análises de tendência.
 
 | Fonte | Dados extraídos | Método |
 |---|---|---|
-| Wikipedia | `creator_id` do YouTube por criador | REST API (`action=parse`) |
+| Wikipedia | `creator_id` do YouTube por criador | Webscrapping / REST API (`action=parse`) |
 | YouTube Data API v3 | Metadados do canal e vídeos | REST API |
 
 ### Carga Inicial
