@@ -1,6 +1,6 @@
 # Arquitetura de Dados — YouTube Creators Pipeline
 
-Pipeline para ingestão e atualização contínua de dados de criadores do YouTube e suas publicações, coletados a partir de APIs públicas e Wikipedia.
+Pipeline para ingestão e atualização contínua de dados de criadores de conteúdo e suas publicações, coletados a partir de APIs e Wikipedia.
 
 ---
 
@@ -18,17 +18,38 @@ Pipeline para ingestão e atualização contínua de dados de criadores do YouTu
 
 ## Visão Geral
 
+Vou utilizar como base o processo de Wikipedia e Youtube realizado anteriormente mas sabendo que podemos ter diversas origens, para complemento das informações: Instagram, TikTok, além de outras Wikis de Fandom, Google Trends, etc, que serão consideradas abaixo como 'Outras Origens'.
+
 ```
-Wikipedia API ──┐
-                ├──▶ [Bronze] ──▶ [Silver] ──▶ [Gold] ──▶ Consumo
-YouTube API ────┘
+Wikipedia e YouTube ───┐
+                       ─▶ [Bronze] ──▶ [Silver] ──▶ [Gold] ──▶ Consumo
+Outras origens ────────┘
 ```
 
-A arquitetura segue o padrão **Medallion (Bronze / Silver / Gold)** no Databricks com tabelas Delta Lake, garantindo rastreabilidade completa desde a fonte até o dado analítico final. Por que? Porque a Bronze imutável é o seu seguro (se uma transformação Silver tiver bug, você reprocessa a partir dos dados brutos sem precisar chamar a API de novo).
+A arquitetura segue o padrão **Medalhão (Bronze / Silver / Gold)** no Databricks com tabelas Delta Lake.
+
+A camada Bronze teria os dados brutos e mantidos imutáveis, garantindo dados não manipulados: se uma transformação Silver tiver bug, posso reprocessar a partir dos dados brutos sem precisar chamar a API / relizar o scrapping de novo.
+
+No caso do Wikipedia via scraping, eu guardaria o HTML bruto (uma coluna como string) com metadados de rastreabilidade:
+```
+{
+    "wiki_page": "Felipe_Neto",
+    "url": "https://en.wikipedia.org/wiki/Felipe_Neto",
+    "html": "<html>...</html>",
+    "ingested_at": "2024-04-15T10:23:00"
+}
+```
+
+Na camada Silver, os dados de cada origem seriam tratados separadamente: extração informações interessantes a partir do HTML com regex, deduplicação das linhas, padronização das colunas, validações das urls extraídas (como a url do YouTube extraída do Wikipedia), alguns joins de enriquecimento (com os dados extraídos do Wikipedia).
+
+Além disso, teria duas estratégias para essa camada: os dados cadastrais seriam atualizados com MERGE INTO (UPSERT), já que nesse caso o estado atual é suficiente; e os dados de métricas de engajamento (likes, views, etc) com snapshot diário (append), para conseguir acessar as variações ao longo do tempo e construir boas soluções enquanto os vídeos estão em alta.
+
+Na camada Gold, os dados seriam agredados e modelados: por exemplo, dados de Youtube unidos com de outras redes sociais, os groupby realizados anteriormente, etc.
+
 
 | Camada | Descrição |
 |--------|-----------|
-| Bronze | Dados brutos das APIs, sem transformação, append-only |
+| Bronze | Dados brutos, sem transformação, append para manter histórico |
 | Silver | Dados limpos, tipados e enriquecidos |
 | Gold   | Agregações analíticas prontas para consumo |
 
@@ -44,13 +65,12 @@ Alternativas consideradas:
 
 | Orquestrador | Motivo de não escolher |
 |---|---|
-| Apache Airflow | Exige infraestrutura separada; overhead desnecessário para este escopo |
-| AWS Step Functions | Vendor lock-in AWS; menos integração nativa com Spark |
-| Prefect / Dagster | Ótimas opções, mas requerem setup adicional fora do Databricks |
+| Apache Airflow | Exige infraestrutura separada; overhead desnecessário |
+| AWS Step Functions | Da AWS; menos integração nativa |
 
 O pipeline roda em dois modos:
 
-- **Carga inicial (backfill)**: execução única, coleta histórico completo
+- **Carga inicial**: execução única, coleta de histórico
 - **Atualização incremental**: agendado diariamente via cron no Databricks Workflows
 
 ---
@@ -60,77 +80,116 @@ O pipeline roda em dois modos:
 ### Diagrama de Relacionamento
 
 ```
-┌─────────────────────┐         ┌──────────────────────────┐
-│   creators          │         │   posts                  │
-├─────────────────────┤         ├──────────────────────────┤
-│ PK  user_id         │────┐    │ PK  post_id              │
-│     wiki_page        │    └───▶│ FK  user_id              │
-│     channel_title    │         │     title                │
-│     subscribers      │         │     published_at         │
-│     total_views      │         │     likes                │
-│     country          │         │     views                │
-│     created_at       │         │     comments_count       │
-│     updated_at       │         │     duration_seconds     │
-└─────────────────────┘         │     ingested_at          │
-                                 └──────────────────────────┘
-          │
-          │
-          ▼
-┌─────────────────────┐
-│   creators_monthly  │
-├─────────────────────┤
-│ FK  user_id         │
-│     year_month      │
-│     num_posts       │
-│     total_likes     │
-│     total_views     │
-└─────────────────────┘
+SILVER
+─────────────────────────────────────────────────────────────────────────────
+
+┌──────────────────────────┐         ┌──────────────────────────────┐
+│   creators               │         │   posts                      │
+│   (MERGE INTO)           │         │   (MERGE INTO)               │
+├──────────────────────────┤         ├──────────────────────────────┤
+│ PK  creator_id           │────┐    │ PK  post_id                  │
+│     wiki_page            │    └───▶│ FK  creator_id               │
+│     channel_title        │         │     title                    │
+│     country              │         │     published_at             │
+│     created_at           │         │     duration_seconds         │
+│     updated_at           │         │     ingested_at              │
+└──────────────────────────┘         └──────────────────────────────┘
+           │                                        │
+           ▼                                        ▼
+┌─────────────────────────────┐         ┌─────────────────────────────┐
+│      creators_metrics       │         │   posts_metrics             │
+│      (APPEND diário)        │         │   (APPEND diário)           │
+├─────────────────────────────┤         ├─────────────────────────────┤
+│ FK  creator_id              │─────▶   │ FK  post_id                 │
+│     subscribers             │         │ FK  creator_id              │
+│     total_views             │         │     likes                   │
+│     snapshot_date           │         │     views                   │
+└─────────────────────────────┘         │     comments_count          │
+           │                            │     snapshot_date           │
+           │                            └─────────────────────────────┘
+           │                                        │
+           └────────────────┤───────────────────────┘
+                            │
+GOLD                        ▼
+─────────────────────────────────────────────────────────────────────────────
+
+                ┌─────────────────────────┐
+                │   creators_monthly      │
+                │   (OVERWRITE)           │
+                ├─────────────────────────┤
+                │ FK  creator_id          │
+                │     year_month          │
+                │     num_posts           │
+                │     total_likes         │
+                │     total_views         │
+                └─────────────────────────┘
 ```
 
 ### Documentação das Tabelas
 
 #### `silver.creators`
 
-Dados cadastrais de cada criador, atualizados a cada execução.
+Dados cadastrais de cada criador, atualizados a cada execução. Podemos criar uma tabela dessa para cada rede social de origem ou uma tabela completa apontando para a todas as redes desse mesmo criador. Para simplificar, fiz com um exemplo do Youtube:
 
 | Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| `user_id` | string | Identificador do canal no YouTube (PK) |
-| `wiki_page` | string | Nome da página na Wikipedia |
-| `channel_title` | string | Nome do canal |
-| `subscribers` | long | Número de inscritos |
-| `total_views` | long | Total de visualizações do canal |
-| `country` | string | País do criador |
-| `created_at` | timestamp | Data de criação do canal |
-| `updated_at` | timestamp | Última atualização do registro |
+|---|---|---|
+| creator_id | string | Identificador do criador (PK) |
+| yt_user | string | Identificador do canal no YouTube (PK) |
+| channel_title | string | Nome do canal no YouTube |
+| wiki_page | string | Nome da página na Wikipedia |
+| country | string | País do criador |
+| created_at | timestamp | Data de criação do canal |
+| updated_at | timestamp | Última atualização do registro |
+
+
+#### `silver.creators_metrics`
+
+Dados com métricas de cada rede social, para acompanhar os números de cada canal.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| yt_user | string | Identificador do canal no YouTube (FK) |
+| subscribers | long | Número de inscritos no YouTube |
+| total_views | long | Total de visualizações do canal |
+| snapshot_date | timestamp | Data do último snapshot |
 
 #### `silver.posts`
 
-Publicações de cada criador. Append-only com snapshot diário de métricas.
+Dados cadastrais de cada publicação, atualizados a cada execução.
 
 | Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| `post_id` | string | ID do vídeo no YouTube (PK) |
-| `user_id` | string | FK para `creators` |
-| `title` | string | Título do vídeo |
-| `published_at` | timestamp | Data de publicação |
-| `likes` | long | Número de likes |
-| `views` | long | Número de visualizações |
-| `comments_count` | long | Número de comentários |
-| `duration_seconds` | integer | Duração em segundos |
-| `ingested_at` | timestamp | Data de ingestão do registro |
+|---|---|---|
+| creator_id | string | Identificador do criador (FK) |
+| yt_user | string | Identificador do canal no YouTube (FK) |
+| post_id | string | ID do vídeo no YouTube (PK) |
+| title | string | Título do vídeo |
+| published_at | timestamp | Data de publicação |
+| ingested_at | timestamp | Data de ingestão do registro |
+
+#### `silver.posts_metrics`
+
+Dados com métricas de cada post, para acompanhar os números ao longo do tempo.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| post_id | string | Identificador do post (FK) |
+| likes | long | Número de likes |
+| views | long | Número de visualizações |
+| tags | long | Tags utilizadas |
+| comments_count | long | Número de comentários |
+| snapshot_date | timestamp | Data do último snapshot |
 
 #### `gold.creators_monthly`
 
 Agregação mensal por criador, usada para análises de tendência.
 
 | Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| `user_id` | string | FK para `creators` |
-| `year_month` | string | Mês no formato `yyyy-MM` |
-| `num_posts` | integer | Número de publicações no mês |
-| `total_likes` | long | Soma de likes do mês |
-| `total_views` | long | Soma de visualizações do mês |
+|---|---|---|
+| creator_id | string | FK para creators |
+| year_month | string | Mês no formato yyyy-MM |
+| num_posts | integer | Número de publicações no mês |
+| total_likes | long | Soma de likes do mês |
+| total_views | long | Soma de visualizações do mês |
 
 ---
 
@@ -140,24 +199,12 @@ Agregação mensal por criador, usada para análises de tendência.
 
 | Fonte | Dados extraídos | Método |
 |---|---|---|
-| Wikipedia API | `user_id` do YouTube por criador | REST API (`action=parse`) |
+| Wikipedia | `creator_id` do YouTube por criador | REST API (`action=parse`) |
 | YouTube Data API v3 | Metadados do canal e vídeos | REST API |
 
 ### Carga Inicial
 
-```
-1. Lista de wiki_pages definida manualmente (seed)
-        ↓
-2. Wikipedia API → resolve wiki_page para youtube user_id
-        ↓
-3. YouTube API (channels) → metadados do canal
-        ↓
-4. YouTube API (search + videos) → histórico completo de vídeos
-        ↓
-5. Grava Bronze → transforma → grava Silver
-```
-
-A carga inicial busca todo o histórico disponível de vídeos de cada canal, iterando via `pageToken` até esgotar os resultados da API.
+A carga inicial seria realizada a partir da lista de wiki_pages, buscando a partir disso os ids do YouTube. Com a API do Youtube eu buscaria os metadados do canal e o histórico completo de vídeos e suas informações: a carga inicial busca todo o histórico disponível de vídeos de cada canal, paginando até esgotar os resultados da API.
 
 ### Atualização Incremental
 
@@ -176,54 +223,25 @@ params = {
 }
 ```
 
-Métricas de vídeos já existentes (likes, views) são atualizadas via upsert com `MERGE INTO` do Delta Lake:
-
-```sql
-MERGE INTO silver.posts AS target
-USING updates AS source
-ON target.post_id = source.post_id
-WHEN MATCHED THEN UPDATE SET
-    target.likes    = source.likes,
-    target.views    = source.views,
-    target.comments_count = source.comments_count
-WHEN NOT MATCHED THEN INSERT *
-```
-
-### Cotas da YouTube Data API v3
+### Cotas da [API do YouTube](https://developers.google.com/youtube/v3/getting-started)
 
 | Operação | Custo (unidades) |
 |---|---|
 | `channels.list` | 1 por canal |
 | `search.list` | 100 por chamada |
 | `videos.list` | 1 por chamada |
-| **Cota diária gratuita** | **10.000 unidades** |
-
-Para um volume de ~50 criadores com atualização diária, o consumo fica bem abaixo da cota gratuita.
+| Cota diária gratuita | 10.000 unidades |
 
 ---
 
 ## Etapas do Pipeline
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                     Databricks Workflow                       │
-│                                                              │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────────┐  │
-│  │  notebook   │    │  notebook   │    │    notebook     │  │
-│  │  1_extract  │───▶│ 2_transform │───▶│    3_load       │  │
-│  │  _raw       │    │  _silver    │    │    _gold        │  │
-│  └─────────────┘    └─────────────┘    └─────────────────┘  │
-│         │                                       │            │
-│         ▼                                       ▼            │
-│    bronze.*                               gold.*             │
-│    (raw JSON)                          (agregações)          │
-└──────────────────────────────────────────────────────────────┘
-```
+Notebook 1 (extração e salva na Bronze) -> Notebook 3 (lê da Bronze, transforma e salva na Silver) -> Notebook 3 (lê da Silver, agrega e salva na Gold)
 
 ### Notebook 1 — Extração (Bronze)
 
 - Lê `creators_scrape_wiki` para obter a lista de criadores
-- Chama Wikipedia API para resolver `wiki_page` → `user_id`
+- Chama Wikipedia API para resolver `wiki_page` → `creator_id`
 - Chama YouTube API para buscar metadados de canais e vídeos
 - Grava resultado bruto em `bronze.creators_raw` e `bronze.posts_raw` (append com timestamp)
 
@@ -251,8 +269,8 @@ Em cada notebook Silver, validações são executadas antes do upsert:
 
 ```python
 # Exemplos de checks de qualidade
-assert df.filter(F.col("user_id").isNull()).count() == 0, "user_id nulo encontrado"
-assert df.filter(F.col("likes") < 0).count() == 0, "likes negativo encontrado"
+assert df.filter(F.col("creator_id").isNull()).count() == 0, "creator_id encontrado"
+assert df.filter(F.col("likes") < 0).count() == 0, "likes negativos encontrado"
 assert df.filter(F.col("published_at") > F.current_timestamp()).count() == 0, "data futura encontrada"
 ```
 
@@ -263,9 +281,9 @@ Se qualquer check falhar, o notebook levanta uma exceção e o Workflow marca a 
 | O que monitorar | Como |
 |---|---|
 | Falha em qualquer notebook | Alerta por e-mail no Databricks Workflows |
-| Volume de registros ingeridos | Log no notebook + métrica no Delta history |
-| Erros 403 / 429 nas APIs | Contador de erros logado por execução |
-| Drift de schema | `mergeSchema` desativado — schema fixo, falha explícita se mudar |
+| Volume de registros ingeridos | Log no notebook + métrica no Delta history |   -> que que é Delta history?????
+| Erros nas APIs | Contador de erros logado por execução |
+| Schema | Schema fixo, falha explícita se mudar |
 
 ### Observabilidade
 
@@ -287,16 +305,9 @@ print({
 
 ### Gitflow
 
-```
-main
- └── develop
-      ├── feature/ingestao-wikipedia
-      ├── feature/youtube-api-integration
-      └── hotfix/fix-403-user-agent
-```
-
 - `main`: código em produção, protegido — merge apenas via PR aprovado
 - `develop`: branch de integração
+- `homolog`: branch de testes, se necessário
 - `feature/*`: uma branch por funcionalidade ou notebook
 - `hotfix/*`: correções urgentes em produção
 
@@ -311,3 +322,5 @@ main
 **Schema explícito**: todos os DataFrames têm schema definido com `StructType`. Nenhum `inferSchema=True` em produção.
 
 **Bronze imutável**: a camada Bronze é append-only e nunca é modificada. Permite reprocessar Silver e Gold a qualquer momento a partir dos dados brutos originais.
+
+**SOLID**: ?????
