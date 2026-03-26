@@ -160,7 +160,7 @@ Notebook 1 (extração e salva na Bronze) -> Notebook 2 (lê da Bronze, transfor
 
 - Lista ids do YouTube, Instagram, etc
 - Busca nas API pelos dados e metadados
-- Grava resultado bruto em `bronze.source` (append com timestamp)
+- Grava resultado bruto na Bronze (append)
 
 ### Notebook 2 — Transformação (Silver)
 
