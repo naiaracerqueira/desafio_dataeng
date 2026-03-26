@@ -36,7 +36,7 @@ No caso do Wikipedia via scraping, eu guardaria o HTML bruto (uma coluna como st
 }
 ```
 
-O particionamento da bronze poderia ser por canal e data de ingestão, Já que, um reprocessamento é sempre por canal: se o parser do Instagram tiver bug, dá para reprocessar source=instagram/ inteiro, não vasculhar todas as datas misturadas com outros canais.
+O particionamento da bronze poderia ser por canal e data de ingestão, Já que, um reprocessamento é sempre por canal: se o parser do Instagram tiver bug, dá para reprocessar source=instagram/ inteiro, não vasculhar todas as datas misturadas com outros canais. Não acredito que 'criador' seja uma boa partição: se temos 300 criadores, partições de alta cardinalidade fragmentam demais os arquivos e degradam performance.
 bronze/
 ├── source=youtube/
 │   ├── ingestion_date=2024-04-15/
@@ -72,107 +72,27 @@ O pipeline roda em dois modos:
 
 ## Modelagem de Dados
 
-### Diagrama de Relacionamento
+![Silver](imagens/silver.png)
 
-```
-SILVER
-─────────────────────────────────────────────────────────────────────────────
+#### `silver.criadores`
 
-┌──────────────────────────┐         ┌──────────────────────────────┐
-│   creators               │         │   posts                      │
-│   (MERGE INTO)           │         │   (MERGE INTO)               │
-├──────────────────────────┤         ├──────────────────────────────┤
-│ PK  creator_id           │────┐    │ PK  post_id                  │
-│     wiki_page            │    └───▶│ FK  creator_id               │
-│     channel_title        │         │     title                    │
-│     country              │         │     published_at             │
-│     created_at           │         │     duration_seconds         │
-│     updated_at           │         │     ingested_at              │
-└──────────────────────────┘         └──────────────────────────────┘
-           │                                        │
-           ▼                                        ▼
-┌─────────────────────────────┐         ┌─────────────────────────────┐
-│      creators_metrics       │         │   posts_metrics             │
-│      (APPEND diário)        │         │   (APPEND diário)           │
-├─────────────────────────────┤         ├─────────────────────────────┤
-│ FK  creator_id              │─────▶   │ FK  post_id                 │
-│     subscribers             │         │ FK  creator_id              │
-│     total_views             │         │     likes                   │
-│     snapshot_date           │         │     views                   │
-└─────────────────────────────┘         │     comments_count          │
-           │                            │     snapshot_date           │
-           │                            └─────────────────────────────┘
-           │                                        │
-           └────────────────┤───────────────────────┘
-                            │
-GOLD                        ▼
-─────────────────────────────────────────────────────────────────────────────
+Dados cadastrais de cada criador, atualizados a cada execução (upsert).
 
-                ┌─────────────────────────┐
-                │   creators_monthly      │
-                │   (OVERWRITE)           │
-                ├─────────────────────────┤
-                │ FK  creator_id          │
-                │     year_month          │
-                │     num_posts           │
-                │     total_likes         │
-                │     total_views         │
-                └─────────────────────────┘
-```
+O `id_criador` seria o id único de cada criador que é monitorado pela empresa.
 
-### Documentação das Tabelas
+#### `silver.conta`
 
-#### `silver.creators`
+Dados com as contas das diversas origens dos dados: youtube, instagram, tiktok, etc. Dados atualizados a cada execução (upsert).
 
-Dados cadastrais de cada criador, atualizados a cada execução. Podemos criar uma tabela dessa para cada rede social de origem ou uma tabela completa apontando para a todas as redes desse mesmo criador. Para simplificar, fiz com um exemplo do Youtube:
-
-| Coluna | Tipo | Descrição |
-|---|---|---|
-| creator_id | string | Identificador do criador (PK) |
-| yt_user | string | Identificador do canal no YouTube (PK) |
-| channel_title | string | Nome do canal no YouTube |
-| wiki_page | string | Nome da página na Wikipedia |
-| country | string | País do criador |
-| created_at | timestamp | Data de criação do canal |
-| updated_at | timestamp | Última atualização do registro |
+O `id_conta` seria um id único, associado a url (do youtube, instagram, ou qualquer outro canal)
+O campo `plataforma` seria apenas o nome do canal (instagram, youtube, tiktok, etc)
 
 
-#### `silver.creators_metrics`
+#### `silver.publicacao`
 
-Dados com métricas de cada rede social, para acompanhar os números de cada canal.
+Dados com todas as publicações, vinculadas às contas. Dados atualizados com append/snapshot para manter histórico das métricas das publicações.
 
-| Coluna | Tipo | Descrição |
-|---|---|---|
-| yt_user | string | Identificador do canal no YouTube (FK) |
-| subscribers | long | Número de inscritos no YouTube |
-| total_views | long | Total de visualizações do canal |
-| snapshot_date | timestamp | Data do último snapshot |
-
-#### `silver.posts`
-
-Dados cadastrais de cada publicação, atualizados a cada execução.
-
-| Coluna | Tipo | Descrição |
-|---|---|---|
-| creator_id | string | Identificador do criador (FK) |
-| yt_user | string | Identificador do canal no YouTube (FK) |
-| post_id | string | ID do vídeo no YouTube (PK) |
-| title | string | Título do vídeo |
-| published_at | timestamp | Data de publicação |
-| ingested_at | timestamp | Data de ingestão do registro |
-
-#### `silver.posts_metrics`
-
-Dados com métricas de cada post, para acompanhar os números ao longo do tempo.
-
-| Coluna | Tipo | Descrição |
-|---|---|---|
-| post_id | string | Identificador do post (FK) |
-| likes | long | Número de likes |
-| views | long | Número de visualizações |
-| tags | long | Tags utilizadas |
-| comments | long | Número de comentários |
-| snapshot_date | timestamp | Data do último snapshot |
+![Gold](imagens/gold.png)
 
 #### `gold.creators_monthly`
 
