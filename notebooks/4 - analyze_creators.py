@@ -39,7 +39,7 @@ from pyspark.sql.types import StructType, StructField, StringType
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 from datetime import timedelta
-
+from dateutil.relativedelta import relativedelta
 
 # COMMAND ----------
 
