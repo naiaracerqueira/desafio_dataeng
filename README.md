@@ -1,6 +1,6 @@
 # Arquitetura de Dados — Creators Pipeline
 
-Pipeline para ingestão e atualização contínua de dados de criadores de conteúdo e suas publicações, coletados a partir de APIs e Wikipedia.
+Pipeline para ingestão e atualização contínua de dados de criadores de conteúdo e suas publicações, coletados a partir de APIs e Webscrapping.
 
 ---
 
@@ -53,19 +53,16 @@ O particionamento seria o mesmo da bronze:
 silver/
 ├── source=youtube/
 │   └── ingestion_date=2024-04-15/
-|       └── silver.youtube_canais
-|       └── silver.youtube_videos
-├── source=wikipedia/
-│   └── ingestion_date=2024-04-15/
-|       └── silver.wikipedia_criadores
+|       └── youtube_canais
+|       └── youtube_videos
 └── source=instagram/
     └── ingestion_date=2024-04-15/
-        └── silver.instagram_contas
-        └── silver.instagram_posts
+        └── instagram_contas
+        └── instagram_posts
 
 ```
 
-Na camada Gold, os dados seriam agredados e modelados e teria duas estratégias para essa camada: os dados cadastrais seriam atualizados com MERGE INTO (UPSERT), já que nesse caso o estado atual é suficiente, e particionados por data de ingestão; e os dados de métricas de engajamento (likes, views, etc) com snapshot diário (append), para conseguir acessar as variações ao longo do tempo e construir boas soluções enquanto os vídeos estão em alta, e particionados pela data do snapshot.
+Na camada Gold, os dados seriam agredados e modelados e teria duas estratégias para essa camada: os dados cadastrais seriam atualizados com MERGE INTO (UPSERT), já que nesse caso o estado atual é suficiente, ; e os dados de métricas de engajamento (likes, views, etc) com snapshot diário (append), para conseguir acessar as variações ao longo do tempo e construir boas soluções enquanto os vídeos estão em alta, e particionados pela data do snapshot.
 
 ---
 
@@ -164,7 +161,7 @@ Notebook 1 (extração e salva na Bronze) -> Notebook 2 (lê da Bronze, transfor
 
 ### Notebook 1 — Extração (Bronze)
 
-- lista ids do YouTube, Instagram, etc
+- Lista ids do YouTube, Instagram, etc
 - Busca nas API pelos dados e metadados
 - Grava resultado bruto em `bronze.source` (append com timestamp)
 
@@ -188,15 +185,26 @@ Notebook 1 (extração e salva na Bronze) -> Notebook 2 (lê da Bronze, transfor
 
 ### Qualidade dos Dados
 
-Em cada notebook Silver, validações são executadas antes do upsert, com a biblioteca de python [great expectations](https://community.databricks.com/t5/community-articles/data-quality-with-pyspark-and-great-expectations-on-databricks/td-p/128912):
+Podemos realizar o DataQuality com a biblioteca de python [great expectations](https://community.databricks.com/t5/community-articles/data-quality-with-pyspark-and-great-expectations-on-databricks/td-p/128912) ou qualquer outra biblioteca destinada a essa função.
+
+Em cada notebook 2 (Silver), validações são executadas após a transformação (explodir o JSON em colunas, tipar, deduplicar): a transformação funcionou corretamente?
+
+Exemplos de checks de qualidade:
+- Unicidade dos IDs de cada plataforma (video_id do YouTube, media_id do Instagram, etc.)
+- Completude de `url`, `dt_publicacao`, `plataforma`
+- O valor de `plataforma` deve estar contida em uma lista de valores válidos (youtube, instagram, tiktok, etc).
+- Valores de likes, compartilhamentos, views e comentários deve ser maior que 1
+- Completude de campos obrigatórios vindos da API (titulo, id_canal)
+
+Em cada notebook 3 (Gold), validações são executadas após a criação das tabelas, validando a integração (cruzamento entre YouTube + Instagram + Outros) numa visão unificada: o join e a modelagem produziram dados consistentes?.
 
 Exemplos de checks de qualidade:
 - validação da unicidade das chaves das tabelas dimensão: `id_criador`, `id_publicacao`, `id_conta`
-- completude das chaves das tabelas dimensão: `id_criador`, `id_publicacao`, `id_conta`
-- completude das colunas de data, `url`, `plataforma`
-- O valor de `plataforma` deve estar contida em uma lista de valores válidos (youtube, instagram, tiktok, etc).
+- completude das chaves na tabela fato: `id_criador`, `id_publicacao`, `id_conta`
 - A valor de `relevância` deve estar em um range de 0 a 1
-- Valores de likes, compartilhamentos, views e comentários deve ser maior que 1
+- Todo id_publicacao na tabela fato deve existir em gold.publicacao (integridade referencial)
+- Todo id_conta na tabela fato deve existir em gold.conta
+- Todo id_criador na tabela fato deve existir em gold.criador
 
 Se qualquer check falhar, o notebook levanta uma exceção e o Workflow marca a execução como falha — sem gravar dados inconsistentes.
 
@@ -233,7 +241,7 @@ print({
 
 - `main`: código em produção, protegido — merge apenas via PR aprovado
 - `develop`: branch de integração
-- `homolog`: branch de testes, se necessário
+- `homolog`: branch de release, se necessário, para testes
 - `feature/*`: uma branch por funcionalidade ou notebook
 - `hotfix/*`: correções urgentes em produção
 
