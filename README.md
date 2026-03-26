@@ -85,30 +85,28 @@ O pipeline roda em dois modos:
 
 ### `gold.fato`
 
-Ids e métricas importantes de serem acompanhadas por publicação de todas as plataformas.
+Tabela com os ids (`id_criador`, `id_conta`, `id_publicacao`), usadas como links para as três tabelas dimensão e métricas importantes de serem acompanhadas por publicação de todas as plataformas: visualizações, likes, comentarios, compartilhamentos.
+
+Data do snapshot, pois essa tabela terá armazenamento de histórico para acompanhar as métricas ao longo do tempo.
 
 ### `gold.criador`
 
-Dados cadastrais de cada criador, atualizados a cada execução (upsert).
+Tabela com valores únicos de `id_criador` para registro de dados cadastrais de cada criador, atualizados eventualmente (upsert). Também teria campos como nome do criador (podendo ser de registro e/ou nome artítisco), país de origem do criador, página no wikipedia, nicho.
 
-O `id_criador` seria o id único de cada criador que é monitorado pela empresa.
+Data do cadastro do criador e data da última atualização (upsert).
 
 ### `gold.conta`
 
-Dados com as contas das diversas origens dos dados: youtube, instagram, tiktok, etc. Dados atualizados a cada execução (upsert).
+Tabela com valores únicos de `id_conta`, associada a url, para registro das diversas origens dos dados: youtube, instagram, tiktok, etc. Nela teremos dados da url completa, plataforma (youtube, instagram, tiktok, etc).
 
-O `id_conta` seria um id único, associado a url (do youtube, instagram, ou qualquer outro canal).
-
-O campo `plataforma` seria apenas o nome do canal (instagram, youtube, tiktok, etc)
+Data do cadastro da conta e data da última atualização (upsert).
 
 
 ### `gold.publicacao`
 
-Dados com todas as publicações de todas as plataformas e criadores e normalização de temas variados em um tema comum entre plataformas.
+Tabela com valores únicos de `id_publicacao` com todas as publicações de todas as plataformas e criadores. Os dados seriam data da publicação, título da postagem, descrição, tags usadas, agregação de temas variados em um tema comum entre plataformas, `fonte_tema` (se aquele tema foi extraído de uma tag explícita ou inferido por NLP), relevância do tema com notas de 0 a 1.
 
-A coluna `fonte_tema` é importante para rastreabilidade: você sabe se aquele tema foi extraído de uma tag explícita ou inferido por NLP.
-
-Dados atualizados com append/snapshot para manter histórico das métricas das publicações.
+Data do cadastro da publicação e data da última atualização (upsert).
 
 ---
 
@@ -185,14 +183,15 @@ Notebook 1 (extração e salva na Bronze) -> Notebook 3 (lê da Bronze, transfor
 
 ### Qualidade dos Dados
 
-Em cada notebook Silver, validações são executadas antes do upsert, com [ferramentas já disponíveis no Databricks](https://www.databricks.com/discover/pages/data-quality-management):
+Em cada notebook Silver, validações são executadas antes do upsert, com a biblioteca de python [great expectations](https://community.databricks.com/t5/community-articles/data-quality-with-pyspark-and-great-expectations-on-databricks/td-p/128912):
 
-```python
-# Exemplos de checks de qualidade
-assert df.filter(F.col("id_criador").isUnique()), "id_criador é único"
-assert df.filter(F.col("likes") < 0).count() == 0, "likes negativos encontrado"
-assert df.filter(F.col("published_at") > F.current_timestamp()).count() == 0, "data futura encontrada"
-```
+Exemplos de checks de qualidade:
+- validação da unicidade das chaves das tabelas dimensão: `id_criador`, `id_publicacao`, `id_conta`
+- completude das chaves das tabelas dimensão: `id_criador`, `id_publicacao`, `id_conta`
+- completude das colunas de data, `url`, `plataforma`
+- O valor de `plataforma` deve estar contida em uma lista de valores válidos (youtube, instagram, tiktok, etc).
+- A valor de `relevância` deve estar em um range de 0 a 1
+- Valores de likes, compartilhamentos, views e comentários deve ser maior que 1
 
 Se qualquer check falhar, o notebook levanta uma exceção e o Workflow marca a execução como falha — sem gravar dados inconsistentes.
 
