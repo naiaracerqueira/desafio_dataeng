@@ -53,12 +53,9 @@ O particionamento seria o mesmo da bronze, por canal e data de ingestão:
 silver/
 ├── source=youtube/
 │   └── ingestion_date=2024-04-15/
-|       └── youtube_canais
-|       └── youtube_videos
+│   └── ingestion_date=2024-04-16/
 └── source=instagram/
     └── ingestion_date=2024-04-15/
-        └── instagram_contas
-        └── instagram_posts
 
 ```
 
@@ -193,7 +190,7 @@ Exemplos de checks de qualidade:
 - Unicidade dos IDs de cada plataforma (video_id do YouTube, media_id do Instagram, etc.)
 - Completude de `url`, `dt_publicacao`, `plataforma`
 - O valor de `plataforma` deve estar contida em uma lista de valores válidos (youtube, instagram, tiktok, etc).
-- Valores de likes, compartilhamentos, views e comentários deve ser maior que 1
+- Valores de likes, compartilhamentos, views e comentários deve ser maior que 0
 - Completude de campos obrigatórios vindos da API (titulo, id_canal)
 
 Em cada notebook 3 (Gold), validações são executadas após a criação das tabelas, validando a integração (cruzamento entre YouTube + Instagram + Outros) numa visão unificada: o join e a modelagem produziram dados consistentes?.
