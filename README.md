@@ -48,7 +48,7 @@ bronze/
 
 Na camada Silver, os dados da bronze seriam transformados em tabelas: extração informações / colunas a partir do HTML com regex, extração informações / colunas a partir do Json da API, tipagem dessas colunas, deduplicação das linhas, validações das urls extraídas (como a url do YouTube extraída do Wikipedia), alguns joins de enriquecimento (com os dados extraídos do Wikipedia), aplicação de dataquality (testes de unicidade e completude). Os dados seriam atualizados por Upsert.
 
-O particionamento seria o mesmo da bronze:
+O particionamento seria o mesmo da bronze, por canal e data de ingestão:
 ```
 silver/
 ├── source=youtube/
@@ -62,7 +62,7 @@ silver/
 
 ```
 
-Na camada Gold, os dados seriam agredados e modelados e teria duas estratégias para essa camada: os dados cadastrais seriam atualizados com MERGE INTO (UPSERT), já que nesse caso o estado atual é suficiente, ; e os dados de métricas de engajamento (likes, views, etc) com snapshot diário (append), para conseguir acessar as variações ao longo do tempo e construir boas soluções enquanto os vídeos estão em alta, e particionados pela data do snapshot.
+Na camada Gold, os dados seriam agredados e modelados e teria duas estratégias para essa camada: os dados cadastrais seriam atualizados com `MERGE INTO` (upsert), já que nesse caso o estado atual é suficiente e não seriam particionados, dado o volume esperado; e os dados de métricas de engajamento (likes, views, etc) seriam atualizados com snapshot diário (append), para conseguir acessar as variações ao longo do tempo e construir boas soluções enquanto os vídeos estão em alta, e particionados pela data do snapshot.
 
 ---
 
