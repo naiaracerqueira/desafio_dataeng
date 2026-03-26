@@ -29,17 +29,18 @@
 
 # COMMAND ----------
 
-# MAGIC %sql 
-# MAGIC -- Como em breve vou fazer um join com essa tabela:
-# MAGIC select distinct yt_user from posts_creator;
-
-# COMMAND ----------
-
 import requests
 import re
 from pyspark.sql import Row
 from pyspark.sql.types import StructType, StructField, StringType
 
+
+# COMMAND ----------
+
+# Como em breve vou fazer um join com essa tabela:
+df_posts = spark.table("default.posts_creator")
+yt_users = [row["yt_user"].lower() for row in df_posts.select("yt_user").distinct().collect()]
+yt_users
 
 # COMMAND ----------
 
@@ -49,48 +50,6 @@ wiki_pages = [row["wiki_page"] for row in df_creators.collect()]
 print(f"Total de páginas a processar: {len(wiki_pages)}")
 wiki_pages
 
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Testes
-
-# COMMAND ----------
-
-WIKIPEDIA_API_URL = "https://en.wikipedia.org/w/api.php"
-HEADERS = {
-    "User-Agent": "users-yt-pipeline/1.0 (databricks; educational project)"
-}
-params = {
-        "action": "parse",
-        "page": "Cocomelon",
-        "format": "json"
-    }
-response = requests.get(WIKIPEDIA_API_URL, params=params, headers=HEADERS, timeout=10)
-data = response.json()
-html = data["parse"]["text"]["*"]
-html
-
-# COMMAND ----------
-
-pattern = r'youtube\.com/(@|channel/|user/|c/)([\w][\w\.\-·]*[\w]|[\w])'
-found = re.findall(pattern, html, re.IGNORECASE)
-print(found)
-# retorna lista de tuplas: [('@', 'felipeneto'), ('user/', 'felipeneto')]
-
-urls = {f"https://www.youtube.com/{prefix}{handle}" for prefix, handle in found}
-urls
-
-# COMMAND ----------
-
-df_posts = spark.table("default.posts_creator")
-yt_users = [row["yt_user"].lower() for row in df_posts.select("yt_user").distinct().collect()]
-yt_users
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Código
 
 # COMMAND ----------
 
@@ -159,25 +118,6 @@ def validation_check(page: str, urls: list):
     new_user_ids, new_urls = get_youtube_id(html)
     return new_user_ids, new_urls
     
-def check_youtube_channel(urls: list, api_key: str) -> bool:
-    """
-    Faz um request no Youtube para ter certeza de que as páginas encontradas realmente existem
-    """
-    for url in urls:
-        try:
-            handle = url.split("/")[-1].lstrip("@")
-            
-            response = requests.get(
-                "https://www.googleapis.com/youtube/v3/channels",
-                params={"part": "id", "forHandle": handle, "key": api_key},
-                headers=HEADERS,
-                timeout=10
-            )
-            data = response.json()
-            return data.get("pageInfo", {}).get("totalResults", 0) > 0
-        except requests.exceptions.RequestException as e:
-            print(f"[ERROR] Falha na requisição para {url}: {e}")
-
 def check_user_ids(user_ids: list):
     """
     Verifica se algum dos user_ids encontrados na Wikipedia está na lista de ids conhecidos (yt_users).
@@ -202,7 +142,6 @@ for page in wiki_pages:
     if not urls:
         user_ids, urls = validation_check(page, urls)
     user_id = check_user_ids(user_ids)
-    # data = check_youtube_channel(urls, api_key)
     
     records.append({"user_id": user_id, "wiki_page": page})
     print(f"{page} → {user_id}")
