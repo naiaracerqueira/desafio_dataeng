@@ -83,7 +83,11 @@ O pipeline roda em dois modos:
 
 ![Gold](imagens/gold.png)
 
-### `gold.criadores`
+### `gold.fato`
+
+Ids e métricas importantes de serem acompanhadas por publicação de todas as plataformas.
+
+### `gold.criador`
 
 Dados cadastrais de cada criador, atualizados a cada execução (upsert).
 
@@ -93,18 +97,18 @@ O `id_criador` seria o id único de cada criador que é monitorado pela empresa.
 
 Dados com as contas das diversas origens dos dados: youtube, instagram, tiktok, etc. Dados atualizados a cada execução (upsert).
 
-O `id_conta` seria um id único, associado a url (do youtube, instagram, ou qualquer outro canal)
+O `id_conta` seria um id único, associado a url (do youtube, instagram, ou qualquer outro canal).
+
 O campo `plataforma` seria apenas o nome do canal (instagram, youtube, tiktok, etc)
 
 
 ### `gold.publicacao`
 
-Dados com todas as publicações, vinculadas às contas. Dados atualizados com append/snapshot para manter histórico das métricas das publicações.
+Dados com todas as publicações de todas as plataformas e criadores e normalização de temas variados em um tema comum entre plataformas.
 
-### `gold.publicacao_tema`
-
-Essa tabela normaliza temas variados em um tema comum entre plataformas.
 A coluna `fonte_tema` é importante para rastreabilidade: você sabe se aquele tema foi extraído de uma tag explícita ou inferido por NLP.
+
+Dados atualizados com append/snapshot para manter histórico das métricas das publicações.
 
 ---
 
