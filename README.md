@@ -52,12 +52,17 @@ O particionamento seria o mesmo da bronze:
 ```
 silver/
 ├── source=youtube/
-│   ├── ingestion_date=2024-04-15/
-│   └── ingestion_date=2024-04-16/
+│   └── ingestion_date=2024-04-15/
+|       └── silver.youtube_canais
+|       └── silver.youtube_videos
 ├── source=wikipedia/
 │   └── ingestion_date=2024-04-15/
+|       └── silver.wikipedia_criadores
 └── source=instagram/
     └── ingestion_date=2024-04-15/
+        └── silver.instagram_contas
+        └── silver.instagram_posts
+
 ```
 
 Na camada Gold, os dados seriam agredados e modelados e teria duas estratégias para essa camada: os dados cadastrais seriam atualizados com MERGE INTO (UPSERT), já que nesse caso o estado atual é suficiente, e particionados por data de ingestão; e os dados de métricas de engajamento (likes, views, etc) com snapshot diário (append), para conseguir acessar as variações ao longo do tempo e construir boas soluções enquanto os vídeos estão em alta, e particionados pela data do snapshot.
@@ -155,7 +160,7 @@ params = {
 
 ## Etapas do Pipeline
 
-Notebook 1 (extração e salva na Bronze) -> Notebook 3 (lê da Bronze, transforma e salva na Silver) -> Notebook 3 (lê da Silver, agrega e salva na Gold)
+Notebook 1 (extração e salva na Bronze) -> Notebook 2 (lê da Bronze, transforma e salva na Silver) -> Notebook 3 (lê da Silver, agrega e salva na Gold)
 
 ### Notebook 1 — Extração (Bronze)
 
@@ -200,9 +205,11 @@ Se qualquer check falhar, o notebook levanta uma exceção e o Workflow marca a 
 | O que monitorar | Como |
 |---|---|
 | Falha em qualquer notebook | Alerta por e-mail no Databricks Workflows |
-| Volume de registros ingeridos | Log no notebook + métrica no Delta history |   -> que que é Delta history?????
+| Volume de registros ingeridos | Log no notebook + métrica no Delta history |
 | Erros nas APIs | Contador de erros logado por execução |
 | Schema | Schema fixo, falha explícita se mudar |
+
+Obs: Delta history é o log de transações nativo do Delta Lake. Cada operação (write, merge, overwrite) gera uma entrada em DESCRIBE HISTORY nome_da_tabela, com timestamp, número de linhas afetadas, versão, etc. É para monitorar o volume de registros sem precisar de infraestrutura extra.
 
 ### Observabilidade
 
@@ -241,5 +248,3 @@ print({
 **Schema explícito**: todos os DataFrames têm schema definido com `StructType`. Nenhum `inferSchema=True` em produção.
 
 **Bronze imutável**: a camada Bronze é append-only e nunca é modificada. Permite reprocessar Silver e Gold a qualquer momento a partir dos dados brutos originais.
-
-**SOLID**: ?????
