@@ -118,12 +118,14 @@ Dados atualizados com append/snapshot para manter histórico das métricas das p
 
 | Fonte | Dados extraídos | Método |
 |---|---|---|
-| Wikipedia | `creator_id` do YouTube por criador | Webscrapping / REST API (`action=parse`) |
-| YouTube Data API v3 | Metadados do canal e vídeos | REST API |
+| Wikipedia | `creator_id` do YouTube por criador | Webscrapping |
+| YouTube Data API | Metadados do canal e vídeos | REST API |
+| Instagram Graph API | Metadados da conta e conteúdos | REST API |
+Além de diversas outras possibilidades de API e Webscrapping
 
 ### Carga Inicial
 
-A carga inicial seria realizada a partir da lista de wiki_pages, buscando a partir disso os ids do YouTube. Com a API do Youtube eu buscaria os metadados do canal e o histórico completo de vídeos e suas informações: a carga inicial busca todo o histórico disponível de vídeos de cada canal, paginando até esgotar os resultados da API.
+A carga inicial seria realizada a partir da lista ids do YouTube, Instagram, etc. Com a API eu buscaria os metadados do canal / páginas e o histórico completo de vídeos / reels e suas informações: a carga inicial busca todo o histórico disponível de vídeos de cada canal, paginando até esgotar os resultados da API.
 
 ### Atualização Incremental
 
