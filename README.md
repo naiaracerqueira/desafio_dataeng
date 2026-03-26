@@ -1,4 +1,4 @@
-# Arquitetura de Dados — YouTube Creators Pipeline
+# Arquitetura de Dados — Creators Pipeline
 
 Pipeline para ingestão e atualização contínua de dados de criadores de conteúdo e suas publicações, coletados a partir de APIs e Wikipedia.
 
@@ -18,17 +18,13 @@ Pipeline para ingestão e atualização contínua de dados de criadores de conte
 
 ## Visão Geral
 
-Vou utilizar como base o processo de Wikipedia e Youtube realizado anteriormente mas sabendo que podemos ter diversas origens, para complemento das informações: Instagram, TikTok, além de outras Wikis de Fandom, Google Trends, etc, que serão consideradas abaixo como 'Outras Origens'.
+Vou utilizar como base o processo de Wikipedia e Youtube realizado anteriormente mas sabendo que podemos ter diversas origens, para complemento das informações: Instagram, TikTok, além de outras Wikis de Fandom, Google Trends.
 
-```
-Wikipedia e YouTube ───┐
-                       ─▶ [Bronze] ──▶ [Silver] ──▶ [Gold] ──▶ Consumo
-Outras origens ────────┘
-```
+A arquitetura seguiria o padrão **Medalhão (Bronze / Silver / Gold)** no Databricks com tabelas Delta Lake.
 
-A arquitetura segue o padrão **Medalhão (Bronze / Silver / Gold)** no Databricks com tabelas Delta Lake.
+![Arquietura](imagens/arquitetura.png)
 
-A camada Bronze teria os dados brutos e mantidos imutáveis, garantindo dados não manipulados: se uma transformação Silver tiver bug, posso reprocessar a partir dos dados brutos sem precisar chamar a API / relizar o scrapping de novo.
+A camada Bronze teria os dados brutos e mantidos imutáveis, garantindo dados não manipulados: se uma transformação Silver tiver bug, posso reprocessar a partir dos dados brutos sem precisar chamar a API / realizar o scrapping de novo.
 
 No caso do Wikipedia via scraping, eu guardaria o HTML bruto (uma coluna como string) com metadados de rastreabilidade:
 ```
@@ -40,18 +36,22 @@ No caso do Wikipedia via scraping, eu guardaria o HTML bruto (uma coluna como st
 }
 ```
 
-Na camada Silver, os dados de cada origem seriam tratados separadamente: extração informações interessantes a partir do HTML com regex, deduplicação das linhas, padronização das colunas, validações das urls extraídas (como a url do YouTube extraída do Wikipedia), alguns joins de enriquecimento (com os dados extraídos do Wikipedia).
+O particionamento da bronze poderia ser por canal e data de ingestão, Já que, um reprocessamento é sempre por canal: se o parser do Instagram tiver bug, dá para reprocessar source=instagram/ inteiro, não vasculhar todas as datas misturadas com outros canais.
+bronze/
+├── source=youtube/
+│   ├── ingestion_date=2024-04-15/
+│   └── ingestion_date=2024-04-16/
+├── source=wikipedia/
+│   └── ingestion_date=2024-04-15/
+└── source=instagram/
+    └── ingestion_date=2024-04-15/
 
-Além disso, teria duas estratégias para essa camada: os dados cadastrais seriam atualizados com MERGE INTO (UPSERT), já que nesse caso o estado atual é suficiente; e os dados de métricas de engajamento (likes, views, etc) com snapshot diário (append), para conseguir acessar as variações ao longo do tempo e construir boas soluções enquanto os vídeos estão em alta.
 
-Na camada Gold, os dados seriam agredados e modelados: por exemplo, dados de Youtube unidos com de outras redes sociais, os groupby realizados anteriormente, etc.
+Na camada Silver, os dados de cada origem seriam tratados separadamente: extração informações a partir do HTML com regex, deduplicação das linhas, padronização das colunas, validações das urls extraídas (como a url do YouTube extraída do Wikipedia), alguns joins de enriquecimento (com os dados extraídos do Wikipedia), aplicação de dataquality (testes de unicidade e completude).
 
+Além disso, teria duas estratégias para essa camada: os dados cadastrais seriam atualizados com MERGE INTO (UPSERT), já que nesse caso o estado atual é suficiente, e particionados por data de ingestão; e os dados de métricas de engajamento (likes, views, etc) com snapshot diário (append), para conseguir acessar as variações ao longo do tempo e construir boas soluções enquanto os vídeos estão em alta, e particionados pela data do snapshot.
 
-| Camada | Descrição |
-|--------|-----------|
-| Bronze | Dados brutos, sem transformação, append para manter histórico |
-| Silver | Dados limpos, tipados e enriquecidos |
-| Gold   | Agregações analíticas prontas para consumo |
+Na camada Gold, os dados seriam agredados e modelados: por exemplo, dados de Youtube unidos com de outros canais, groupby realizados anteriormente, etc. É possível ter bons resultados como uma modelagem dimensional simples: fato de métricas diárias + dimensão de criadores.
 
 ---
 
@@ -59,14 +59,9 @@ Na camada Gold, os dados seriam agredados e modelados: por exemplo, dados de You
 
 **Escolha: Databricks Workflows**
 
-Por já estar no ecossistema Databricks, o Workflows elimina a necessidade de infraestrutura adicional e se integra nativamente com os notebooks e tabelas Delta do projeto.
+Eu tenho bastante experiência na AWS e costumo utilizar o glue workflow para pipelines simples e que utilizam apenas o glue; ou step functions, para pipelines mais complexas (envonvendo muitos jobs, paralelismos e dependências) ou com outras ferramentas. O Airflow também é uma boa pedida em termos de orquestradores, principalmente quando o nível de complexidade da pipeline é alto, porém, nesse caso de arquitetura medalhão, o custo operacional de manter um Airflow separado não se justifica.
 
-Alternativas consideradas:
-
-| Orquestrador | Motivo de não escolher |
-|---|---|
-| Apache Airflow | Exige infraestrutura separada; overhead desnecessário |
-| AWS Step Functions | Da AWS; menos integração nativa |
+Porém, por estar no ecossistema Databricks, o Workflows é nativo e elimina a necessidade de infraestrutura adicional; se integra nativamente com os notebooks e as tabelas Delta do projeto, além de ter notificações, retry policies e dependências entre tasks, sendo assim a melhor opção.
 
 O pipeline roda em dois modos:
 
