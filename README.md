@@ -218,16 +218,28 @@ Obs: Delta history é o log de transações nativo do Delta Lake. Cada operaçã
 
 ### Observabilidade
 
+Como no Databricks tudo que você printa num notebook aparece nos logs da execução do Workflow, ao final de cada notebook, printaria um resumo da execução e, se necessário, gravaria numa tabela Delta de logs para melhor acompanhamento.
+
 ```python
-# Ao final de cada notebook, loga um resumo da execução
-print({
+log_entry = {
     "notebook": "2_transform_silver",
     "run_date": date.today().isoformat(),
     "creators_updated": creators_df.count(),
     "posts_inserted": new_posts,
     "posts_updated": updated_posts,
     "errors": error_count,
-})
+}
+print(log_entry)
+spark.createDataFrame([log_entry]).write \
+    .mode("append") \
+    .saveAsTable("monitoring.pipeline_logs")
+
+```
+Ainda sobre logs, dados como tempo de início, fim, status (sucesso/falha), cluster usado e custo podem ser acompanhados nas System Tables.
+```sql
+SELECT * FROM system.workflow.job_run_timeline
+WHERE job_id = 123
+ORDER BY start_time DESC
 ```
 
 ---
