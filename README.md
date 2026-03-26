@@ -24,9 +24,7 @@ A arquitetura seguiria o padrão **Medalhão (Bronze / Silver / Gold)** no Datab
 
 ![Arquietura](imagens/arquitetura.png)
 
-A camada Bronze teria os dados brutos e mantidos imutáveis, garantindo dados não manipulados: se uma transformação Silver tiver bug, posso reprocessar a partir dos dados brutos sem precisar chamar a API / realizar o scrapping de novo.
-
-No caso do Wikipedia via scraping, eu guardaria o HTML bruto (uma coluna como string) com metadados de rastreabilidade:
+A camada Bronze teria os dados brutos e mantidos imutáveis, garantindo dados não manipulados: se uma transformação Silver tiver bug, posso reprocessar a partir dos dados brutos sem precisar chamar a API / realizar o scrapping de novo. No caso dos resultados via scrapping e API, eu guardaria o HTML bruto ou o json de retorno do request como uma coluna (string) com metadados de rastreabilidade:
 ```
 {
     "wiki_page": "Felipe_Neto",
@@ -37,6 +35,7 @@ No caso do Wikipedia via scraping, eu guardaria o HTML bruto (uma coluna como st
 ```
 
 O particionamento da bronze poderia ser por canal e data de ingestão, Já que, um reprocessamento é sempre por canal: se o parser do Instagram tiver bug, dá para reprocessar source=instagram/ inteiro, não vasculhar todas as datas misturadas com outros canais. Não acredito que 'criador' seja uma boa partição: se temos 300 criadores, partições de alta cardinalidade fragmentam demais os arquivos e degradam performance.
+```
 bronze/
 ├── source=youtube/
 │   ├── ingestion_date=2024-04-15/
@@ -45,13 +44,23 @@ bronze/
 │   └── ingestion_date=2024-04-15/
 └── source=instagram/
     └── ingestion_date=2024-04-15/
+```
 
+Na camada Silver, os dados da bronze seriam transformados em tabelas: extração informações / colunas a partir do HTML com regex, extração informações / colunas a partir do Json da API, tipagem dessas colunas, deduplicação das linhas, validações das urls extraídas (como a url do YouTube extraída do Wikipedia), alguns joins de enriquecimento (com os dados extraídos do Wikipedia), aplicação de dataquality (testes de unicidade e completude).
 
-Na camada Silver, os dados de cada origem seriam tratados separadamente: extração informações a partir do HTML com regex, deduplicação das linhas, padronização das colunas, validações das urls extraídas (como a url do YouTube extraída do Wikipedia), alguns joins de enriquecimento (com os dados extraídos do Wikipedia), aplicação de dataquality (testes de unicidade e completude).
+O particionamento seria o mesmo da bronze:
+```
+silver/
+├── source=youtube/
+│   ├── ingestion_date=2024-04-15/
+│   └── ingestion_date=2024-04-16/
+├── source=wikipedia/
+│   └── ingestion_date=2024-04-15/
+└── source=instagram/
+    └── ingestion_date=2024-04-15/
+```
 
-Além disso, teria duas estratégias para essa camada: os dados cadastrais seriam atualizados com MERGE INTO (UPSERT), já que nesse caso o estado atual é suficiente, e particionados por data de ingestão; e os dados de métricas de engajamento (likes, views, etc) com snapshot diário (append), para conseguir acessar as variações ao longo do tempo e construir boas soluções enquanto os vídeos estão em alta, e particionados pela data do snapshot.
-
-Na camada Gold, os dados seriam agredados e modelados: por exemplo, dados de Youtube unidos com de outros canais, groupby realizados anteriormente, etc. É possível ter bons resultados como uma modelagem dimensional simples: fato de métricas diárias + dimensão de criadores.
+Na camada Gold, os dados seriam agredados e modelados e teria duas estratégias para essa camada: os dados cadastrais seriam atualizados com MERGE INTO (UPSERT), já que nesse caso o estado atual é suficiente, e particionados por data de ingestão; e os dados de métricas de engajamento (likes, views, etc) com snapshot diário (append), para conseguir acessar as variações ao longo do tempo e construir boas soluções enquanto os vídeos estão em alta, e particionados pela data do snapshot.
 
 ---
 
@@ -72,15 +81,15 @@ O pipeline roda em dois modos:
 
 ## Modelagem de Dados
 
-![Silver](imagens/silver.png)
+![Gold](imagens/gold.png)
 
-#### `silver.criadores`
+### `gold.criadores`
 
 Dados cadastrais de cada criador, atualizados a cada execução (upsert).
 
 O `id_criador` seria o id único de cada criador que é monitorado pela empresa.
 
-#### `silver.conta`
+### `gold.conta`
 
 Dados com as contas das diversas origens dos dados: youtube, instagram, tiktok, etc. Dados atualizados a cada execução (upsert).
 
@@ -88,24 +97,9 @@ O `id_conta` seria um id único, associado a url (do youtube, instagram, ou qual
 O campo `plataforma` seria apenas o nome do canal (instagram, youtube, tiktok, etc)
 
 
-#### `silver.publicacao`
+### `gold.publicacao`
 
 Dados com todas as publicações, vinculadas às contas. Dados atualizados com append/snapshot para manter histórico das métricas das publicações.
-
-![Gold](imagens/gold.png)
-
-#### `gold.creators_monthly`
-
-Agregação mensal por criador, usada para análises de tendência.
-
-| Coluna | Tipo | Descrição |
-|---|---|---|
-| creator_id | string | Identificador do criador (PK) |
-| yt_user | string | Identificador do canal no YouTube (PK) |
-| year_month | string | Mês no formato yyyy-MM |
-| num_posts | integer | Número de publicações no mês |
-| total_likes | long | Soma de likes do mês |
-| total_views | long | Soma de visualizações do mês |
 
 ---
 
