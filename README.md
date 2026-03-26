@@ -46,7 +46,7 @@ bronze/
     └── ingestion_date=2024-04-15/
 ```
 
-Na camada Silver, os dados da bronze seriam transformados em tabelas: extração informações / colunas a partir do HTML com regex, extração informações / colunas a partir do Json da API, tipagem dessas colunas, deduplicação das linhas, validações das urls extraídas (como a url do YouTube extraída do Wikipedia), alguns joins de enriquecimento (com os dados extraídos do Wikipedia), aplicação de dataquality (testes de unicidade e completude).
+Na camada Silver, os dados da bronze seriam transformados em tabelas: extração informações / colunas a partir do HTML com regex, extração informações / colunas a partir do Json da API, tipagem dessas colunas, deduplicação das linhas, validações das urls extraídas (como a url do YouTube extraída do Wikipedia), alguns joins de enriquecimento (com os dados extraídos do Wikipedia), aplicação de dataquality (testes de unicidade e completude). Os dados seriam atualizados por Upsert.
 
 O particionamento seria o mesmo da bronze:
 ```
@@ -161,24 +161,23 @@ Notebook 1 (extração e salva na Bronze) -> Notebook 3 (lê da Bronze, transfor
 
 ### Notebook 1 — Extração (Bronze)
 
-- Lê `creators_scrape_wiki` para obter a lista de criadores
-- Chama Wikipedia API para resolver `wiki_page` → `creator_id`
-- Chama YouTube API para buscar metadados de canais e vídeos
-- Grava resultado bruto em `bronze.creators_raw` e `bronze.posts_raw` (append com timestamp)
+- lista ids do YouTube, Instagram, etc
+- Busca nas API pelos dados e metadados
+- Grava resultado bruto em `bronze.source` (append com timestamp)
 
 ### Notebook 2 — Transformação (Silver)
 
-- Lê Bronze, valida e limpa os dados
+- Lê Bronze, cria colunas, valida e limpa os dados
 - Tipagem explícita de todas as colunas
 - Remove duplicatas e registros inválidos
+- Data Quality
 - Upsert via `MERGE INTO` nas tabelas Silver
 
 ### Notebook 3 — Agregação (Gold)
 
-- Lê Silver e calcula agregações mensais por criador
-- Garante que todos os meses do intervalo existam (cross join com calendário)
-- Preenche meses sem posts com `num_posts = 0`
-- Sobrescreve tabelas Gold com `overwrite`
+- Lê Silver e cria tabelas fato e dimensões
+- Sobrescreve tabelas de cadastro / dimensão com `overwrite`
+- Snapshot das tabelas de métricas
 
 ---
 
@@ -186,11 +185,11 @@ Notebook 1 (extração e salva na Bronze) -> Notebook 3 (lê da Bronze, transfor
 
 ### Qualidade dos Dados
 
-Em cada notebook Silver, validações são executadas antes do upsert:
+Em cada notebook Silver, validações são executadas antes do upsert, com [ferramentas já disponíveis no Databricks](https://www.databricks.com/discover/pages/data-quality-management):
 
 ```python
 # Exemplos de checks de qualidade
-assert df.filter(F.col("creator_id").isNull()).count() == 0, "creator_id encontrado"
+assert df.filter(F.col("id_criador").isUnique()), "id_criador é único"
 assert df.filter(F.col("likes") < 0).count() == 0, "likes negativos encontrado"
 assert df.filter(F.col("published_at") > F.current_timestamp()).count() == 0, "data futura encontrada"
 ```
