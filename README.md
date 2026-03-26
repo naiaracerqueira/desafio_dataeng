@@ -101,6 +101,11 @@ O campo `plataforma` seria apenas o nome do canal (instagram, youtube, tiktok, e
 
 Dados com todas as publicações, vinculadas às contas. Dados atualizados com append/snapshot para manter histórico das métricas das publicações.
 
+### `gold.publicacao_tema`
+
+Essa tabela normaliza temas variados em um tema comum entre plataformas.
+A coluna `fonte_tema` é importante para rastreabilidade: você sabe se aquele tema foi extraído de uma tag explícita ou inferido por NLP.
+
 ---
 
 ## Extração de Dados
