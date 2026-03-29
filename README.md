@@ -40,8 +40,6 @@ bronze/
 ├── source=youtube/
 │   ├── ingestion_date=2024-04-15/
 │   └── ingestion_date=2024-04-16/
-├── source=wikipedia/
-│   └── ingestion_date=2024-04-15/
 └── source=instagram/
     └── ingestion_date=2024-04-15/
 ```
