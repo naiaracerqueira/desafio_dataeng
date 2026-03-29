@@ -111,12 +111,13 @@ def validation_check(page: str, urls: list):
     # new_user_id = get_youtube_id(html)
 
     # Porém, o nome é outro: Pirulla, então vou alterar manualmente para a consulta
-    # Se for o caso, é importante alterar o valor de wiki_page também o valor na origem, optei por não fazer por não ter certeza se esse valor é utilizado em outros casos, outros joins, etc.
-    new_wiki_page = 'Pirulla'
-    print(f"[WARNING] Não foram encontradas urls na {page}, valor atualizado para {new_wiki_page}")
-    html = request_wikipedia(new_wiki_page)
-    new_user_ids, new_urls = get_youtube_id(html)
-    return new_user_ids, new_urls
+    print(f"[WARNING] Não foram encontradas urls na {page}")
+    if page == 'Pirula_(YouTuber)':
+        new_wiki_page = 'Pirulla'
+        print(f"valor atualizado para {new_wiki_page}")
+        html = request_wikipedia(new_wiki_page)
+        new_user_ids, new_urls = get_youtube_id(html)
+        return new_wiki_page, new_user_ids, new_urls
     
 def check_user_ids(user_ids: list):
     """
@@ -140,7 +141,7 @@ for page in wiki_pages:
     html = request_wikipedia(page)
     user_ids, urls = get_youtube_id(html)
     if not urls:
-        user_ids, urls = validation_check(page, urls)
+        page, user_ids, urls = validation_check(page, urls)
     user_id = check_user_ids(user_ids)
     
     records.append({"user_id": user_id, "wiki_page": page})
